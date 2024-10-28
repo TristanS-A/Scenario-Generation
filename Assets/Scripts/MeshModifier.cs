@@ -19,18 +19,7 @@ public class MeshModifier : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        _resolution = _terrain.terrainData.heightmapResolution;
-        _noise = new float[_resolution, _resolution];
-
-        for (int x = 0; x < _resolution; x++)
-        {
-            for (int y = 0; y < _resolution; y++)
-            {
-                _noise[x, y] = Mathf.PerlinNoise(x * _multiplier * _multiplier, y * _multiplier * 0.5f) * _multiplier;
-            }
-        }
-
-        _terrain.terrainData.SetHeights(0, 0, _noise);
+        GenerateTerrain();
 
         AStar aStar = new AStar();
         List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0));
@@ -58,6 +47,47 @@ public class MeshModifier : MonoBehaviour
     void FixedUpdate()
     {
         //Erode();
+    }
+
+    void GenerateTerrain()
+    {
+        _resolution = _terrain.terrainData.heightmapResolution;
+        _noise = new float[_resolution, _resolution];
+
+        for (int x = 0; x < _resolution; x++)
+        {
+            for (int y = 0; y < _resolution; y++)
+            {
+                _noise[x, y] = Mathf.PerlinNoise(x * _multiplier * _multiplier, y * _multiplier * 0.5f) * _multiplier;
+            }
+        }
+
+        _terrain.terrainData.SetHeights(0, 0, _noise);
+
+        /*
+         _resolution = _terrain.terrainData.heightmapResolution;
+        _noise = new float[_resolution, _resolution];
+
+        for (int y = 0; y < _resolution; y++)
+        {
+            for (int x = 0; x < _resolution; x++)
+            {
+                float value = 0;
+                for (int octive = 1; octive < 4; octive*= 2)
+                {
+                    float scale = octive / (_resolution / 2);
+                    value += (1f / octive) * Mathf.PerlinNoise(x * scale, y * scale);
+                }
+
+                Vector2 center =  new Vector2(_resolution / 2, _resolution / 2);
+                Vector2 pos = new Vector2(x, y);
+                value -= (center - pos).magnitude / _resolution;
+                _noise[x, y] = value / 2;
+            }
+        }
+
+        _terrain.terrainData.SetHeights(0, 0, _noise);
+         */
     }
 
     void Erode()

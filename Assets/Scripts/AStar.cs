@@ -115,9 +115,9 @@ public class AStar
     {
         List<Vector2Int> neighbors = new List<Vector2Int>();
 
-        for (int i = -maskSize; i <= maskSize; i++)
+        for (int j = -maskSize; j <= maskSize; j++)
         {
-            for (int j = -maskSize; j <= maskSize; j++)
+            for (int i = -maskSize; i <= maskSize; i++)
             {
                 int worldPointX = currPoint.x + i;
                 int worldPointY = currPoint.y + j;
@@ -126,7 +126,7 @@ public class AStar
                 {
                     if (worldPointX >= 0 && worldPointY >= 0 && worldPointX < noise.GetLength(0) && worldPointY < noise.GetLength(1))
                     {
-                        if ((i != 0 && j != 0 && i % j != 0) || (i == 1 || j == 1))
+                        if ((i != 0 && j != 0 && i % j != 0 && j % i != 0) || (i * i == 1 || j * j == 1))
                         {
                             float deltaHeight = noise[worldPointX, worldPointY] - noise[currPoint.x, currPoint.y];
                             neighbors.Add(new Vector2Int(worldPointX, worldPointY));
