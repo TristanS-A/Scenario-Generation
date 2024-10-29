@@ -21,6 +21,58 @@ public class MeshModifier : MonoBehaviour
     {
         GenerateTerrain();
 
+        RunAStar();
+    }
+
+    // Update is called once per frame
+    void FixedUpdate()
+    {
+        //Erode();
+    }
+
+    void GenerateTerrain()
+    {
+       /* _resolution = _terrain.terrainData.heightmapResolution;
+        _noise = new float[_resolution, _resolution];
+
+        for (int x = 0; x < _resolution; x++)
+        {
+            for (int y = 0; y < _resolution; y++)
+            {
+                _noise[x, y] = Mathf.PerlinNoise(x * _multiplier * _multiplier, y * _multiplier * 0.5f) * _multiplier;
+            }
+        }
+
+        _terrain.terrainData.SetHeights(0, 0, _noise);*/
+
+        
+         _resolution = _terrain.terrainData.heightmapResolution;
+        _noise = new float[_resolution, _resolution];
+
+        for (int y = 0; y < _resolution; y++)
+        {
+            for (int x = 0; x < _resolution; x++)
+            {
+                float value = 0;
+                for (int octive = 1; octive <= 4; octive*= 2)
+                {
+                    float scale = octive / (_resolution / 2f);
+                    value += (1f / octive) * Mathf.PerlinNoise(x * scale, y * scale);
+                }
+
+                Vector2 center =  new Vector2(_resolution / 2, _resolution / 2);
+                Vector2 pos = new Vector2(x, y);
+                //value -= (center - pos).magnitude /(4* _resolution);
+                _noise[x, y] = value / 2;
+            }
+        }
+
+        _terrain.terrainData.SetHeights(0, 0, _noise);
+         
+    }
+
+    void RunAStar()
+    {
         AStar aStar = new AStar();
         List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0));
         Debug.Log(path.Count);
@@ -43,53 +95,6 @@ public class MeshModifier : MonoBehaviour
         }
     }
 
-    // Update is called once per frame
-    void FixedUpdate()
-    {
-        //Erode();
-    }
-
-    void GenerateTerrain()
-    {
-        _resolution = _terrain.terrainData.heightmapResolution;
-        _noise = new float[_resolution, _resolution];
-
-        for (int x = 0; x < _resolution; x++)
-        {
-            for (int y = 0; y < _resolution; y++)
-            {
-                _noise[x, y] = Mathf.PerlinNoise(x * _multiplier * _multiplier, y * _multiplier * 0.5f) * _multiplier;
-            }
-        }
-
-        _terrain.terrainData.SetHeights(0, 0, _noise);
-
-        /*
-         _resolution = _terrain.terrainData.heightmapResolution;
-        _noise = new float[_resolution, _resolution];
-
-        for (int y = 0; y < _resolution; y++)
-        {
-            for (int x = 0; x < _resolution; x++)
-            {
-                float value = 0;
-                for (int octive = 1; octive < 4; octive*= 2)
-                {
-                    float scale = octive / (_resolution / 2);
-                    value += (1f / octive) * Mathf.PerlinNoise(x * scale, y * scale);
-                }
-
-                Vector2 center =  new Vector2(_resolution / 2, _resolution / 2);
-                Vector2 pos = new Vector2(x, y);
-                value -= (center - pos).magnitude / _resolution;
-                _noise[x, y] = value / 2;
-            }
-        }
-
-        _terrain.terrainData.SetHeights(0, 0, _noise);
-         */
-    }
-
     void Erode()
     {
         Drop drop = new Drop(new Vector2(UnityEngine.Random.Range(1, _resolution - 1), UnityEngine.Random.Range(1, _resolution - 1)));
@@ -102,7 +107,7 @@ public class MeshModifier : MonoBehaviour
             Vector3 gradient = CalculateGradient(_noise, dropPos);
 
             // Accelerate particle using newtonian mechanics using the surface normal.
-            drop.speed += (new Vector2(gradient.x, gradient.z) / (drop.volume * _density)).normalized;  // F = ma, so a = F/m
+            drop.speed += (new Vector2(gradient.x, gradient.z) / (drop.volume * _density));  // F = ma, so a = F/m
             drop.pos += drop.speed;
             drop.speed *= (1.0f - _friction);  // Friction Factor
 
