@@ -21,13 +21,13 @@ public class MeshModifier : MonoBehaviour
     {
         GenerateTerrain();
 
-        RunAStar();
+        //RunAStar();
     }
 
     // Update is called once per frame
     void FixedUpdate()
     {
-        //Erode();
+        Erode();
     }
 
     void GenerateTerrain()
@@ -104,10 +104,10 @@ public class MeshModifier : MonoBehaviour
             Vector2Int dropPos = new Vector2Int((int)drop.pos.x, (int)drop.pos.y);
             if (dropPos.x <= 0 || dropPos.y <= 0 || dropPos.x >= _resolution - 1 || dropPos.y >= _resolution - 1) break;
 
-            Vector3 gradient = CalculateGradient(_noise, dropPos);
+            Vector2Int gradient = CalculateGradient(_noise, dropPos);
 
             // Accelerate particle using newtonian mechanics using the surface normal.
-            drop.speed += (new Vector2(gradient.x, gradient.z) / (drop.volume * _density));  // F = ma, so a = F/m
+            drop.speed = new Vector2(gradient.x, gradient.y);  // F = ma, so a = F/m
             drop.pos += drop.speed;
             drop.speed *= (1.0f - _friction);  // Friction Factor
 
@@ -116,11 +116,15 @@ public class MeshModifier : MonoBehaviour
             float deltaHeight = (_noise[dropPos.x, dropPos.y] - _noise[(int)drop.pos.x, (int)drop.pos.y]);
 
             // Compute sediment capacity difference
-            float maxsediment = drop.volume * drop.speed.magnitude * deltaHeight; //Uses delta height of old vs new height
+            float maxsediment = drop.volume * drop.speed.magnitude * drop.pickup; //Uses delta height of old vs new height
 
             //Stops from using negative sediment and going uphill
-            if (maxsediment < 0.0f || deltaHeight < 0) maxsediment = 0.0f;
-            float sdiff = Mathf.Max(0, maxsediment - drop.sediment);
+            if (maxsediment < 0.0f || deltaHeight < 0)
+            {
+                maxsediment = 0.0f;
+            }
+
+            float sdiff = Mathf.Max(0, maxsediment);
 
             // Act on the heights and Droplet!
             drop.sediment += _depositionRate * sdiff;
@@ -133,15 +137,22 @@ public class MeshModifier : MonoBehaviour
         _terrain.terrainData.SetHeights(0, 0, _noise);
     }
 
-    Vector3 CalculateGradient(float[,] noise, Vector2Int pos)
+    Vector2Int CalculateGradient(float[,] noise, Vector2Int pos)
     {
-        float scale = 5;
+        Dictionary<float, Vector2Int> map = new Dictionary<float, Vector2Int>();
 
-        Vector3 gradient = (0.15f) * new Vector3(scale * (noise[pos.x, pos.y] - noise[pos.x + 1, pos.y]), 1.0f, 0.0f).normalized;  // Positive X
-        gradient += (0.15f) * new Vector3(scale * (noise[pos.x - 1, pos.y] - noise[pos.x, pos.y]), 1.0f, 0.0f).normalized;           // Negative X
-        gradient += (0.15f) * new Vector3(0.0f, 1.0f, scale * (noise[pos.x, pos.y] - noise[pos.x, pos.y + 1])).normalized;           // Positive Y
-        gradient += (0.15f) * new Vector3(0.0f, 1.0f, scale * (noise[pos.x, pos.y - 1] - noise[pos.x, pos.y])).normalized;     // Negative Y
+        float top = noise[pos.x, pos.y - 1];
+        float bottom = noise[pos.x, pos.y + 1];
+        float left = noise[pos.x - 1, pos.y];
+        float right = noise[pos.x + 1, pos.y];
 
-        return gradient;
+        map[top] = Vector2Int.up;
+        map[bottom] = Vector2Int.down;
+        map[left] = Vector2Int.left;
+        map[right] = Vector2Int.right;
+
+        float min = Mathf.Min(Mathf.Min(left, right), Mathf.Min(top, bottom));
+
+        return map[min];
     }
 }
