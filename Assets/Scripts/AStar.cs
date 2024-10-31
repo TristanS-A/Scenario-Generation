@@ -6,6 +6,7 @@ using Utils;
 public class AStar
 {
     private PriorityQueue<AStarNode, float> frontier;
+    private float _maxSlope = 0.0006f;
 
     private struct AStarNode
     {
@@ -17,7 +18,7 @@ public class AStar
         }
 
         public Vector2Int centerPoint;
-        public int weight;
+        public float weight;
         public float heuristic;
         public static bool operator <(AStarNode a, AStarNode b) {
             return (a.weight + a.heuristic) > (b.weight + b.heuristic);
@@ -82,7 +83,7 @@ public class AStar
                 foreach (Vector2Int neighbor in neighbors) {
                     cameFrom[neighbor] = currNode.centerPoint;
                     AStarNode newNeighborNode = new AStarNode(neighbor); //Converts neighbor point into AStar node
-                    newNeighborNode.weight = currNode.weight + 1; //Updates neighbor weights
+                    newNeighborNode.weight = currNode.weight + (neighbor - currNode.centerPoint).magnitude; //Updates neighbor weights
                     newNeighborNode.heuristic = newNeighborNode.calculateEuclideanHeuristic(goalPoint);
                     frontier.Enqueue(newNeighborNode, newNeighborNode.getTotalWeight());
                     frontierSet.Add(neighbor);
@@ -91,6 +92,7 @@ public class AStar
         }
 
         List<Vector2Int> path = new List<Vector2Int>(); //Path from the goal to the start
+
         if (endPoint != goalPoint)
         {
             Debug.Log("Did not find goal");
@@ -99,6 +101,7 @@ public class AStar
         {
             Debug.Log("Found Goal!!");
         }
+
         //Builds path only if a goal was found
         Vector2Int current = endPoint;
         while (current != start.centerPoint)
@@ -128,8 +131,11 @@ public class AStar
                     {
                         if ((i != 0 && j != 0 && i % j != 0 && j % i != 0) || (i * i == 1 || j * j == 1))
                         {
-                            float deltaHeight = noise[worldPointX, worldPointY] - noise[currPoint.x, currPoint.y];
-                            neighbors.Add(new Vector2Int(worldPointX, worldPointY));
+                            float deltaHeight = noise[worldPointY, worldPointX] - noise[currPoint.y, currPoint.x];
+                            if (-_maxSlope < deltaHeight && deltaHeight < _maxSlope)
+                            {
+                                neighbors.Add(new Vector2Int(worldPointX, worldPointY));
+                            }
                         }
                     }
                 }

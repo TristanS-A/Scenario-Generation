@@ -21,31 +21,17 @@ public class MeshModifier : MonoBehaviour
     {
         GenerateTerrain();
 
-        //RunAStar();
+        RunAStar();
     }
 
     // Update is called once per frame
     void FixedUpdate()
     {
-        Erode();
+        //Erode();
     }
 
     void GenerateTerrain()
     {
-       /* _resolution = _terrain.terrainData.heightmapResolution;
-        _noise = new float[_resolution, _resolution];
-
-        for (int x = 0; x < _resolution; x++)
-        {
-            for (int y = 0; y < _resolution; y++)
-            {
-                _noise[x, y] = Mathf.PerlinNoise(x * _multiplier * _multiplier, y * _multiplier * 0.5f) * _multiplier;
-            }
-        }
-
-        _terrain.terrainData.SetHeights(0, 0, _noise);*/
-
-        
          _resolution = _terrain.terrainData.heightmapResolution;
         _noise = new float[_resolution, _resolution];
 
@@ -54,7 +40,7 @@ public class MeshModifier : MonoBehaviour
             for (int x = 0; x < _resolution; x++)
             {
                 float value = 0;
-                for (int octive = 1; octive <= 4; octive*= 2)
+                for (float octive = 0.5f; octive <= 2f; octive*= 2)
                 {
                     float scale = octive / (_resolution / 2f);
                     value += (1f / octive) * Mathf.PerlinNoise(x * scale, y * scale);
@@ -85,8 +71,8 @@ public class MeshModifier : MonoBehaviour
             GameObject empty = new GameObject();
             LineRenderer line = empty.AddComponent<LineRenderer>();
 
-            Vector3 pos1 = new Vector3(path[i].x * scale.x, _noise[path[i].x, path[i].y] * scale.y, path[i].y * scale.z);
-            Vector3 pos2 = new Vector3(path[i + 1].x * scale.x, _noise[path[i + 1].x, path[i + 1].y] * scale.y, path[i + 1].y * scale.z);
+            Vector3 pos1 = new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z);
+            Vector3 pos2 = new Vector3(path[i + 1].x * scale.x, _noise[path[i + 1].y, path[i + 1].x] * scale.y, path[i + 1].y * scale.z);
 
             line.enabled = true;
             empty.transform.position = pos1;
@@ -116,7 +102,7 @@ public class MeshModifier : MonoBehaviour
             float deltaHeight = (_noise[dropPos.x, dropPos.y] - _noise[(int)drop.pos.x, (int)drop.pos.y]);
 
             // Compute sediment capacity difference
-            float maxsediment = drop.volume * drop.speed.magnitude * drop.pickup; //Uses delta height of old vs new height
+            float maxsediment = drop.volume * drop.speed.magnitude * deltaHeight; //Uses delta height of old vs new height
 
             //Stops from using negative sediment and going uphill
             if (maxsediment < 0.0f || deltaHeight < 0)
@@ -124,7 +110,13 @@ public class MeshModifier : MonoBehaviour
                 maxsediment = 0.0f;
             }
 
-            float sdiff = Mathf.Max(0, maxsediment);
+            float sdiff = maxsediment;
+
+            if (maxsediment <= drop.sediment)
+            {
+                //sdiff = 0.0f;
+                drop.sediment -= drop.volume * drop.speed.magnitude * deltaHeight;
+            }
 
             // Act on the heights and Droplet!
             drop.sediment += _depositionRate * sdiff;
@@ -145,13 +137,21 @@ public class MeshModifier : MonoBehaviour
         float bottom = noise[pos.x, pos.y + 1];
         float left = noise[pos.x - 1, pos.y];
         float right = noise[pos.x + 1, pos.y];
+        float topRight = noise[pos.x + 1, pos.y - 1];
+        float topLeft = noise[pos.x - 1, pos.y - 1];
+        float bottomRight = noise[pos.x + 1, pos.y + 1];
+        float bottomLeft = noise[pos.x - 1, pos.y + 1];
 
-        map[top] = Vector2Int.up;
-        map[bottom] = Vector2Int.down;
+        map[top] = Vector2Int.down;
+        map[bottom] = Vector2Int.up;
         map[left] = Vector2Int.left;
         map[right] = Vector2Int.right;
+        map[topRight] = new Vector2Int(1, -1);
+        map[topLeft] = new Vector2Int(-1, -1);
+        map[bottomRight] = new Vector2Int(1, 1);
+        map[bottomLeft] = new Vector2Int(-1, 1);
 
-        float min = Mathf.Min(Mathf.Min(left, right), Mathf.Min(top, bottom));
+        float min = Mathf.Min(Mathf.Min(Mathf.Min(topLeft, topRight), Mathf.Min(bottomLeft, bottomRight)), Mathf.Min(Mathf.Min(left, right), Mathf.Min(top, bottom)));
 
         return map[min];
     }
