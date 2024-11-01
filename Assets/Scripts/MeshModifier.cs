@@ -27,7 +27,7 @@ public class MeshModifier : MonoBehaviour
     // Update is called once per frame
     void FixedUpdate()
     {
-        //Erode();
+       //Erode();
     }
 
     void GenerateTerrain()
@@ -87,19 +87,19 @@ public class MeshModifier : MonoBehaviour
 
         while (drop.volume > _minVolume)
         {
-            Vector2Int dropPos = new Vector2Int((int)drop.pos.x, (int)drop.pos.y);
+            Vector2Int dropPos = new Vector2Int(Mathf.RoundToInt(drop.pos.x), Mathf.RoundToInt(drop.pos.y));
             if (dropPos.x <= 0 || dropPos.y <= 0 || dropPos.x >= _resolution - 1 || dropPos.y >= _resolution - 1) break;
 
             Vector2Int gradient = CalculateGradient(_noise, dropPos);
 
             // Accelerate particle using newtonian mechanics using the surface normal.
-            drop.speed = new Vector2(gradient.x, gradient.y);  // F = ma, so a = F/m
-            drop.pos += drop.speed;
+            drop.speed = new Vector2(gradient.x, gradient.y).normalized;  // F = ma, so a = F/m
+            drop.pos += drop.speed.normalized;
             drop.speed *= (1.0f - _friction);  // Friction Factor
 
-            if ((int)drop.pos.x < 0 || (int)drop.pos.y < 0 || (int)drop.pos.x >= _resolution || (int)drop.pos.y >= _resolution) break;
+            if (Mathf.RoundToInt(drop.pos.x) < 0 || Mathf.RoundToInt(drop.pos.y) < 0 || Mathf.RoundToInt(drop.pos.x) >= _resolution || Mathf.RoundToInt(drop.pos.y) >= _resolution) break;
 
-            float deltaHeight = (_noise[dropPos.x, dropPos.y] - _noise[(int)drop.pos.x, (int)drop.pos.y]);
+            float deltaHeight = (_noise[dropPos.x, dropPos.y] - _noise[Mathf.RoundToInt(drop.pos.x), Mathf.RoundToInt(drop.pos.y)]);
 
             // Compute sediment capacity difference
             float maxsediment = drop.volume * drop.speed.magnitude * deltaHeight; //Uses delta height of old vs new height
@@ -112,15 +112,17 @@ public class MeshModifier : MonoBehaviour
 
             float sdiff = maxsediment;
 
-            if (maxsediment <= drop.sediment)
+            if (drop.sediment > maxsediment)
             {
-                //sdiff = 0.0f;
                 drop.sediment -= drop.volume * drop.speed.magnitude * deltaHeight;
+                drop.sediment += _depositionRate * sdiff;
             }
-
-            // Act on the heights and Droplet!
-            drop.sediment += _depositionRate * sdiff;
-            _noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);
+            else if (drop.sediment <= maxsediment)
+            {
+                drop.sediment += drop.volume * drop.speed.magnitude * deltaHeight;
+                drop.sediment -= _depositionRate * sdiff;
+                _noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);
+            }
 
             // Evaporate the Droplet (Note: Proportional to Volume! Better: Use shape factor to make proportional to the area instead.)
             drop.volume *= (1.0f - _evapRate);

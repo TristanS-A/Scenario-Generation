@@ -6,7 +6,7 @@ using Utils;
 public class AStar
 {
     private PriorityQueue<AStarNode, float> frontier;
-    private float _maxSlope = 0.0006f;
+    private float _maxSlope = 0.0005f;
 
     private struct AStarNode
     {
