@@ -1,17 +1,16 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 public class MeshModifier : MonoBehaviour
 {
     [SerializeField] private Terrain _terrain;
-    private float _multiplier = 0.05f;
     private float _minVolume = 0.01f;
     private int _resolution;
     private float[,] _noise;
-    private float _density = 1;
     private float _friction = 0.05f;
     private float _depositionRate = 1f;
     private float _evapRate = 0.001f;
@@ -40,16 +39,16 @@ public class MeshModifier : MonoBehaviour
             for (int x = 0; x < _resolution; x++)
             {
                 float value = 0;
-                for (float octive = 0.5f; octive <= 2f; octive*= 2)
+                for (float octive = 1f; octive <= 4f; octive*= 2)
                 {
                     float scale = octive / (_resolution / 2f);
                     value += (1f / octive) * Mathf.PerlinNoise(x * scale, y * scale);
                 }
 
-                Vector2 center =  new Vector2(_resolution / 2, _resolution / 2);
+                Vector2 center =  new Vector2(_resolution / 2f, _resolution / 2f);
                 Vector2 pos = new Vector2(x, y);
-                //value -= (center - pos).magnitude /(4* _resolution);
-                _noise[x, y] = value / 2;
+                value -= (center - pos).magnitude / _resolution;
+                _noise[x, y] = value / 2f;
             }
         }
 
@@ -90,7 +89,7 @@ public class MeshModifier : MonoBehaviour
             Vector2Int dropPos = new Vector2Int(Mathf.RoundToInt(drop.pos.x), Mathf.RoundToInt(drop.pos.y));
             if (dropPos.x <= 0 || dropPos.y <= 0 || dropPos.x >= _resolution - 1 || dropPos.y >= _resolution - 1) break;
 
-            Vector2Int gradient = CalculateGradient(_noise, dropPos);
+            Vector2Int gradient = CalculateGradient(_noise, dropPos, drop.speed.normalized);
 
             // Accelerate particle using newtonian mechanics using the surface normal.
             drop.speed += new Vector2(gradient.x, gradient.y).normalized;  // F = ma, so a = F/m
@@ -120,9 +119,9 @@ public class MeshModifier : MonoBehaviour
             }
             else if (drop.sediment >= maxsediment)
             {
-                //_noise[dropPos.x, dropPos.y] += (drop.volume * _depositionRate * sdiff);
                 drop.sediment -= drop.volume * deltaHeight;
                 drop.sediment += _depositionRate * sdiff;
+                //_noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);
             }
 
             // Evaporate the Droplet (Note: Proportional to Volume! Better: Use shape factor to make proportional to the area instead.)
@@ -132,9 +131,10 @@ public class MeshModifier : MonoBehaviour
         _terrain.terrainData.SetHeights(0, 0, _noise);
     }
 
-    Vector2Int CalculateGradient(float[,] noise, Vector2Int pos)
+    Vector2Int CalculateGradient(float[,] noise, Vector2Int pos, Vector2 currDirection)
     {
         Dictionary<float, Vector2Int> map = new Dictionary<float, Vector2Int>();
+        List<float> neighbors = new List<float>();
 
         float top = noise[pos.x, pos.y - 1];
         float bottom = noise[pos.x, pos.y + 1];
@@ -154,8 +154,48 @@ public class MeshModifier : MonoBehaviour
         map[bottomRight] = new Vector2Int(1, 1);
         map[bottomLeft] = new Vector2Int(-1, 1);
 
-        float min = Mathf.Min(Mathf.Min(Mathf.Min(topLeft, topRight), Mathf.Min(bottomLeft, bottomRight)), Mathf.Min(Mathf.Min(left, right), Mathf.Min(top, bottom)));
 
-        return map[min];
+        ////Min slope method
+        //float min = Mathf.Min(Mathf.Min(Mathf.Min(topLeft, topRight), Mathf.Min(bottomLeft, bottomRight)), Mathf.Min(Mathf.Min(left, right), Mathf.Min(top, bottom)));
+        //return map[min];
+
+
+        //Calculates lowest 2 values
+        neighbors.Add(top);
+        neighbors.Add(bottom);
+        neighbors.Add(left);
+        neighbors.Add(right);
+        neighbors.Add(topRight);
+        neighbors.Add(topLeft);
+        neighbors.Add(bottomRight);
+        neighbors.Add(bottomLeft);
+
+        float min1Value = float.MaxValue;
+        float min2Value = float.MaxValue;
+        for (int i = 0; i < neighbors.Count; i++)
+        {
+            if (neighbors[i] < min1Value)
+            {
+                min1Value = neighbors[i];
+            }
+            else if (neighbors[i] < min2Value)
+            {
+                min2Value = neighbors[i];
+            }
+        }
+
+        Vector2Int minDirection1 = map[min1Value];
+        Vector2Int minDirection2 = map[min2Value];
+
+        ////Random of the lowest 2 directions
+        //Vector2Int newDirection = UnityEngine.Random.Range(0, 2) == 1 ? minDirection1 : minDirection2;
+
+
+        ////Random of the lowest 2 directions with closest direction being more likely
+        float changeDir = Vector2.Dot(((Vector2)minDirection1 + (Vector2)minDirection2).normalized, currDirection);
+        Vector2Int newDirection = UnityEngine.Random.Range(-1f, 1f) < changeDir ? minDirection1 : minDirection2;
+
+
+        return newDirection;
     }
 }
