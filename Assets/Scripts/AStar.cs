@@ -6,7 +6,7 @@ using Utils;
 public class AStar
 {
     private PriorityQueue<AStarNode, float> frontier;
-    private float _maxSlope = 0.0005f;
+    private float _maxSlope = 1f;
 
     private struct AStarNode
     {
@@ -31,28 +31,28 @@ public class AStar
 
         public float getTotalWeight() { return weight + heuristic; }
 
-        public float calculateEuclideanHeuristic(Vector2 goal) {
-
-            //Loop through all avalable directions to points that are not visited and calculate their weight and heuristic to the goal
-            //Get the closest one / most likely one
-            //Get rid of that direction for returning to this node
-
-            //Calculate neighbors by drawing a vector to each point and if a vector exists with the same direction then replace that point with the closer one
-
-            return (goal - centerPoint).magnitude;
+        public float calculateEuclideanHeuristic(Vector2Int goal, float[,] noise) {
+            //Calculates heuristic by converting positions to a unit cube (since the noise values are from 0-1)
+            //and then finds the magnatude of the displacment vector
+            Vector2 scaledGoalXYPos = (Vector2)goal / noise.GetLength(0);
+            Vector2 scaledCurrentXYPos = (Vector2)centerPoint / noise.GetLength(0);
+            Vector3 worldDisVec = new Vector3(scaledGoalXYPos.x, noise[goal.y, goal.x], scaledGoalXYPos.y) - new Vector3(scaledCurrentXYPos.x, noise[centerPoint.y, centerPoint.x], scaledCurrentXYPos.y);
+            return worldDisVec.magnitude;
         }
     }
 
-    public List<Vector2Int> generatePath(float[,] noise, Vector2Int startPoint, Vector2Int goalPoint)
+    public List<Vector2Int> generatePath(float[,] noise, Vector2Int startPoint, Vector2Int goalPoint, int gridMaskSize = 5, float maxSlope = 1)
     {
         Dictionary<Vector2Int, Vector2Int> cameFrom = new Dictionary<Vector2Int, Vector2Int>();  // to build the flowfield and build the path
         frontier = new PriorityQueue<AStarNode, float>();                   // to store next ones to visit
         HashSet<Vector2Int> frontierSet = new HashSet<Vector2Int>();        // OPTIMIZATION to check faster if a point is in the queue
         Dictionary<Vector2Int, bool> visited = new Dictionary<Vector2Int, bool>();      // use .at() to get data, if the element don't exist [] will give you wrong results
+        int totalNeighborsEvaluated = 0;
+        _maxSlope = maxSlope;
 
         // bootstrap state
         AStarNode start = new AStarNode(startPoint);
-        start.heuristic = start.calculateEuclideanHeuristic(goalPoint);
+        start.heuristic = start.calculateEuclideanHeuristic(goalPoint, noise);
 
         //Adds the start node to the frontier and adds the point to the frontier set to keep track of it
         frontier.Enqueue(start, start.getTotalWeight());
@@ -75,7 +75,8 @@ public class AStar
             }
 
             visited[currNode.centerPoint] = true; //Sets the current point as visited
-            List<Vector2Int> neighbors = getGridMaskPoints(5, noise, currNode.centerPoint, frontierSet, visited); //Gets the neighbors of the current point
+            List<Vector2Int> neighbors = getGridMaskPoints(gridMaskSize, noise, currNode.centerPoint, frontierSet, visited); //Gets the neighbors of the current point
+            totalNeighborsEvaluated += neighbors.Count;
 
             //While the neighbors exist, update the cameFrom map with them and add them to the priority queue
             if (neighbors.Count > 0)
@@ -83,14 +84,22 @@ public class AStar
                 foreach (Vector2Int neighbor in neighbors) {
                     cameFrom[neighbor] = currNode.centerPoint;
                     AStarNode newNeighborNode = new AStarNode(neighbor); //Converts neighbor point into AStar node
-                    newNeighborNode.weight = currNode.weight + (neighbor - currNode.centerPoint).magnitude; //Updates neighbor weights
-                    newNeighborNode.heuristic = newNeighborNode.calculateEuclideanHeuristic(goalPoint);
+
+                    //Calculates weight by converting positions to a unit cube (since the noise values are from 0-1)
+                    //and then finds the magnatude of the displacment vector which is added to the previous node's weight
+                    Vector2 scaledNeighborXYPos = (Vector2)neighbor / noise.GetLength(0);
+                    Vector2 scaledCurrentXYPos = (Vector2)currNode.centerPoint / noise.GetLength(0);
+                    Vector3 worldDisVec = new Vector3(scaledNeighborXYPos.x, noise[neighbor.y, neighbor.x], scaledNeighborXYPos.y) - new Vector3(scaledCurrentXYPos.x, noise[currNode.centerPoint.y, currNode.centerPoint.x], scaledCurrentXYPos.y);
+                    newNeighborNode.weight = currNode.weight + worldDisVec.magnitude; //Updates neighbor weights
+                    
+                    newNeighborNode.heuristic = newNeighborNode.calculateEuclideanHeuristic(goalPoint, noise);
                     frontier.Enqueue(newNeighborNode, newNeighborNode.getTotalWeight());
                     frontierSet.Add(neighbor);
                 }
             }
         }
 
+        Debug.Log("Total Neighbors Evaluated: " + totalNeighborsEvaluated);
         List<Vector2Int> path = new List<Vector2Int>(); //Path from the goal to the start
 
         if (endPoint != goalPoint)
@@ -132,7 +141,11 @@ public class AStar
                         if ((i != 0 && j != 0 && i % j != 0 && j % i != 0) || (i * i == 1 || j * j == 1))
                         {
                             float deltaHeight = noise[worldPointY, worldPointX] - noise[currPoint.y, currPoint.x];
-                            if (-_maxSlope < deltaHeight && deltaHeight < _maxSlope)
+                            float deltaX = worldPointX - currPoint.x;
+
+                            float slope = deltaHeight / (deltaX / noise.GetLength(0));
+
+                            if (-_maxSlope < slope && slope < _maxSlope)
                             {
                                 neighbors.Add(new Vector2Int(worldPointX, worldPointY));
                             }

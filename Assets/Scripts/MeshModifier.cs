@@ -14,21 +14,45 @@ public class MeshModifier : MonoBehaviour
     private float _friction = 0.05f;
     private float _depositionRate = 1f;
     private float _evapRate = 0.001f;
+    private bool _runningErosion = false;
+    private int _gridMaskSize = 5;
+    private float _maxAStarSlope = 1f;
 
     // Start is called before the first frame update
     void Start()
     {
         GenerateTerrain();
-
-        //RunAStar();
     }
 
     // Update is called once per frame
     void FixedUpdate()
     {
-       Erode();
+        if (_runningErosion)
+        {
+            Erode();
+        }
     }
 
+    void OnGUI()
+    {
+        GUI.Box(new Rect(10, 10, 175, 165), "Test Menu");
+
+        GUI.Label(new Rect(175 / 2 - 165 / 2 + 10, 35, 165, 20), "Anisotropic A* Grid Size: " + _gridMaskSize.ToString());
+        _gridMaskSize = (int)GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 60, 80, 20), _gridMaskSize, 1, 20);
+
+        GUI.Label(new Rect(175 / 2 - 115 / 2 + 10, 35 + 40, 115, 20), "A* Max Slope: " + _maxAStarSlope.ToString("0.00"));
+        _maxAStarSlope = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 60 + 40, 80, 20), _maxAStarSlope, 0, 2);
+
+        if (GUI.Button(new Rect(175 / 2 - 40 + 10, 120, 80, 20), "Run A*"))
+        {
+            RunAStar();
+        }
+
+        if (GUI.Button(new Rect(175 / 2 - 50 + 10, 145, 100, 20), _runningErosion ? "Stop Erosion" : "Start Erosion"))
+        {
+            _runningErosion = !_runningErosion;
+        }
+    }
     void GenerateTerrain()
     {
          _resolution = _terrain.terrainData.heightmapResolution;
@@ -39,7 +63,7 @@ public class MeshModifier : MonoBehaviour
             for (int x = 0; x < _resolution; x++)
             {
                 float value = 0;
-                for (float octive = 1f; octive <= 4f; octive*= 2)
+                for (float octive = 2f; octive <= 4f; octive*= 2)
                 {
                     float scale = octive / (_resolution / 2f);
                     value += (1f / octive) * Mathf.PerlinNoise(x * scale, y * scale);
@@ -48,7 +72,7 @@ public class MeshModifier : MonoBehaviour
                 Vector2 center =  new Vector2(_resolution / 2f, _resolution / 2f);
                 Vector2 pos = new Vector2(x, y);
                 value -= (center - pos).magnitude / _resolution;
-                _noise[x, y] = value / 2f;
+                _noise[x, y] = Mathf.Max(0, value) / 2f;
             }
         }
 
@@ -58,13 +82,20 @@ public class MeshModifier : MonoBehaviour
 
     void RunAStar()
     {
+        LineRenderer[] lineRenderers = FindObjectsOfType<LineRenderer>();
+        foreach (LineRenderer lr in  lineRenderers)
+        {
+            Destroy(lr.gameObject);
+        }
+
         AStar aStar = new AStar();
-        List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0));
+        List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 200), _gridMaskSize, _maxAStarSlope);
         Debug.Log(path.Count);
 
         Vector3 scale = _terrain.terrainData.heightmapScale;
         Debug.Log(scale);
 
+        float totalLength = 0;
         for (int i = 0; i < path.Count - 1; i++)
         {
             GameObject empty = new GameObject();
@@ -73,11 +104,15 @@ public class MeshModifier : MonoBehaviour
             Vector3 pos1 = new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z);
             Vector3 pos2 = new Vector3(path[i + 1].x * scale.x, _noise[path[i + 1].y, path[i + 1].x] * scale.y, path[i + 1].y * scale.z);
 
+            totalLength += (pos2 - pos1).magnitude;
+
             line.enabled = true;
             empty.transform.position = pos1;
             line.SetPosition(0, pos1);
             line.SetPosition(1, pos2);
         }
+
+        Debug.Log("Total Path Length: " + totalLength);
     }
 
     void Erode()
