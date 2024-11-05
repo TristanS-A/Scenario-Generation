@@ -89,7 +89,7 @@ public class MeshModifier : MonoBehaviour
         }
 
         AStar aStar = new AStar();
-        List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 200), _gridMaskSize, _maxAStarSlope);
+        List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0), _gridMaskSize, _maxAStarSlope);
         Debug.Log(path.Count);
 
         Vector3 scale = _terrain.terrainData.heightmapScale;
@@ -121,7 +121,7 @@ public class MeshModifier : MonoBehaviour
 
         while (drop.volume > _minVolume)
         {
-            Vector2Int dropPos = new Vector2Int(Mathf.RoundToInt(drop.pos.x), Mathf.RoundToInt(drop.pos.y));
+            Vector2Int dropPos = new Vector2Int((int)Mathf.Floor(drop.pos.x), (int)Mathf.Floor(drop.pos.y));
             if (dropPos.x <= 0 || dropPos.y <= 0 || dropPos.x >= _resolution - 1 || dropPos.y >= _resolution - 1) break;
 
             Vector2Int gradient = CalculateGradient(_noise, dropPos, drop.speed.normalized);
@@ -131,9 +131,9 @@ public class MeshModifier : MonoBehaviour
             drop.pos += drop.speed.normalized;
             drop.speed *= (1.0f - _friction);  // Friction Factor
 
-            if (Mathf.RoundToInt(drop.pos.x) < 0 || Mathf.RoundToInt(drop.pos.y) < 0 || Mathf.RoundToInt(drop.pos.x) >= _resolution || Mathf.RoundToInt(drop.pos.y) >= _resolution) break;
+            if ((int)Mathf.Floor(drop.pos.x) < 0 || (int)Mathf.Floor(drop.pos.y) < 0 || (int)Mathf.Floor(drop.pos.x) >= _resolution || (int)Mathf.Floor(drop.pos.y) >= _resolution) break;
 
-            float deltaHeight = (_noise[dropPos.x, dropPos.y] - _noise[Mathf.RoundToInt(drop.pos.x), Mathf.RoundToInt(drop.pos.y)]);
+            float deltaHeight = (_noise[dropPos.x, dropPos.y] - _noise[(int)Mathf.Floor(drop.pos.x), (int)Mathf.Floor(drop.pos.y)]);
 
             // Compute sediment capacity difference
             float maxsediment = drop.volume * deltaHeight; //Uses delta height of old vs new height
@@ -158,6 +158,9 @@ public class MeshModifier : MonoBehaviour
                 drop.sediment += _depositionRate * sdiff;
                 //_noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);
             }
+
+            /////////Calcuate avarage height from neighbors to smooth erosion
+            /////////Make less erosion depending on how full the sediment level is
 
             // Evaporate the Droplet (Note: Proportional to Volume! Better: Use shape factor to make proportional to the area instead.)
             drop.volume *= (1.0f - _evapRate);
