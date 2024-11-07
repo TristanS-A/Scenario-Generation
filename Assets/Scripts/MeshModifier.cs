@@ -3,12 +3,14 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Splines;
 using UnityEngine.UIElements;
 using static UnityEditor.PlayerSettings;
 
 public class MeshModifier : MonoBehaviour
 {
     [SerializeField] private Terrain _terrain;
+    [SerializeField] private GameObject _spline;
     private float _minVolume = 0.01f;
     private int _resolution;
     private float[,] _noise;
@@ -18,6 +20,14 @@ public class MeshModifier : MonoBehaviour
     private bool _runningErosion = false;
     private int _gridMaskSize = 5;
     private float _maxAStarSlope = 1f;
+
+    private List<Vector3> _splineVertsP1 = new List<Vector3>();
+    private List<Vector3> _splineVertsP2 = new List<Vector3>();
+    private int _splineResolution = 10;
+    private float _roadWidth = 10f;
+    private SplineContainer _currSplineContainer;
+    private MeshFilter _currRoadMeshFilter;
+    public MeshFilter me;
 
     // Start is called before the first frame update
     void Start()
@@ -140,22 +150,38 @@ public class MeshModifier : MonoBehaviour
 
     void RunAStar()
     {
-        LineRenderer[] lineRenderers = FindObjectsOfType<LineRenderer>();
-        foreach (LineRenderer lr in  lineRenderers)
-        {
-            Destroy(lr.gameObject);
-        }
-
         AStar aStar = new AStar();
         List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0), _gridMaskSize, _maxAStarSlope);
         Debug.Log(path.Count);
 
         Vector3 scale = _terrain.terrainData.heightmapScale;
-        Debug.Log(scale);
+
+        SplineContainer[] splineContainers = FindObjectsOfType<SplineContainer>();
+        foreach (SplineContainer sc in splineContainers)
+        {
+            Destroy(sc.gameObject);
+        }
+
+        SplineContainer spline = Instantiate(_spline).GetComponent<SplineContainer>();
+        _currSplineContainer = spline;
+        _currRoadMeshFilter = spline.gameObject.GetComponent<MeshFilter>();
 
         float totalLength = 0;
+
+        for (int i = 0; i < path.Count; i++)
+        {
+            spline.Spline.Add(new BezierKnot(new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z)), 0);
+        }
+
+        /*LineRenderer[] lineRenderers = FindObjectsOfType<LineRenderer>();
+        foreach (LineRenderer lr in lineRenderers)
+        {
+            Destroy(lr.gameObject);
+        }
+
         for (int i = 0; i < path.Count - 1; i++)
         {
+            
             GameObject empty = new GameObject();
             LineRenderer line = empty.AddComponent<LineRenderer>();
 
@@ -168,9 +194,12 @@ public class MeshModifier : MonoBehaviour
             empty.transform.position = pos1;
             line.SetPosition(0, pos1);
             line.SetPosition(1, pos2);
-        }
+        }*/
 
         Debug.Log("Total Path Length: " + totalLength);
+
+        GetSplineVerts();
+        GenerateRoadMesh();
     }
 
     void Erode()
@@ -307,5 +336,79 @@ public class MeshModifier : MonoBehaviour
         float totalHightChange = Mathf.Abs(hL - hC) + Mathf.Abs(hR - hC) + Mathf.Abs(hD - hC) + Mathf.Abs(hU - hC);
 
         return totalHightChange;
+    }
+
+    private void GetRoadWidthSegment(float t, out Vector3 pos1, out Vector3 pos2)
+    {
+        Unity.Mathematics.float3 position;
+        Unity.Mathematics.float3 forward;
+        Unity.Mathematics.float3 up;
+        _currSplineContainer.Evaluate(t, out position, out forward, out up);
+
+         Unity.Mathematics.float3 right = Vector3.Cross(forward, up).normalized;
+        pos1 = position + _roadWidth;
+        pos2 = position - _roadWidth;
+    }
+
+    private void GetSplineVerts()
+    {
+        _splineVertsP1 = new();
+        _splineVertsP2 = new();
+
+        float step = 1f / (float)_splineResolution;
+        for (int i = 0; i < _splineResolution; i++)
+        {
+            float time = step * i;
+            GetRoadWidthSegment(time, out Vector3 pos1, out Vector3 pos2);
+            _splineVertsP1.Add(pos1);
+            _splineVertsP2.Add(pos2);
+        }
+    }
+
+    private void GenerateRoadMesh()
+    {
+        Mesh roadMesh = new Mesh();
+        List<Vector3> roadVerts = new List<Vector3>();
+        List<int> roadTris = new List<int>();
+        int offset = 0;
+        int length = _splineVertsP2.Count;
+
+        for (int i = 1; i <=length; i++)
+        {
+            Vector3 p1 = _splineVertsP1[i - 1];
+            Vector3 p2 = _splineVertsP2[i - 1];
+            Vector3 p3;
+            Vector3 p4;
+
+            if (i == length)
+            {
+                p3 = _splineVertsP1[0];
+                p4 = _splineVertsP2[0];
+            }
+            else
+            {
+                p3 = _splineVertsP1[i];
+                p4 = _splineVertsP2[i];
+            }
+
+            offset = 4 * (i - 1);
+
+            int t1 = offset;
+            int t2 = offset + 2;
+            int t3 = offset + 3;
+
+            int t4 = t3;
+            int t5 = offset + 1;
+            int t6 = t1;
+
+            roadVerts.AddRange(new List<Vector3> { p1, p2, p3, p4 });
+            roadTris.AddRange(new List<int> { t1, t2, t3, t4, t5, t6 });
+        }
+
+        Debug.Log("HRERE: " + roadVerts.Count);
+        roadMesh.SetVertices(roadVerts);
+        roadMesh.SetTriangles(roadTris, 0);
+        roadMesh.name = "Road Mesh";
+        me.mesh = roadMesh;
     }
 }
