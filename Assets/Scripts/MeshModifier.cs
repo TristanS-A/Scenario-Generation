@@ -11,6 +11,7 @@ public class MeshModifier : MonoBehaviour
 {
     [SerializeField] private Terrain _terrain;
     [SerializeField] private GameObject _spline;
+    [SerializeField] private GameObject _car;
     private float _minVolume = 0.01f;
     private int _resolution;
     private float[,] _noise;
@@ -23,8 +24,8 @@ public class MeshModifier : MonoBehaviour
 
     private List<Vector3> _splineVertsP1 = new List<Vector3>();
     private List<Vector3> _splineVertsP2 = new List<Vector3>();
-    private int _splineResolution = 10;
-    private float _roadWidth = 10f;
+    private int _splineResolution = 1000;
+    private float _roadWidth = 1.5f;
     private SplineContainer _currSplineContainer;
     private MeshFilter _currRoadMeshFilter;
     public MeshFilter me;
@@ -346,8 +347,8 @@ public class MeshModifier : MonoBehaviour
         _currSplineContainer.Evaluate(t, out position, out forward, out up);
 
          Unity.Mathematics.float3 right = Vector3.Cross(forward, up).normalized;
-        pos1 = position + _roadWidth;
-        pos2 = position - _roadWidth;
+        pos1 = position + _roadWidth * right;
+        pos2 = position - _roadWidth * right;
     }
 
     private void GetSplineVerts()
@@ -370,10 +371,13 @@ public class MeshModifier : MonoBehaviour
         Mesh roadMesh = new Mesh();
         List<Vector3> roadVerts = new List<Vector3>();
         List<int> roadTris = new List<int>();
+        List<Vector2> roadUVs = new List<Vector2>();
+
         int offset = 0;
+        float uvOffset = 0;
         int length = _splineVertsP2.Count;
 
-        for (int i = 1; i <=length; i++)
+        for (int i = 1; i <= length; i++)
         {
             Vector3 p1 = _splineVertsP1[i - 1];
             Vector3 p2 = _splineVertsP2[i - 1];
@@ -403,12 +407,27 @@ public class MeshModifier : MonoBehaviour
 
             roadVerts.AddRange(new List<Vector3> { p1, p2, p3, p4 });
             roadTris.AddRange(new List<int> { t1, t2, t3, t4, t5, t6 });
+
+            float distance = Vector3.Distance(p1, p3) / 4f;
+            float uvDistance = uvOffset + distance;
+            roadUVs.AddRange(new List<Vector2> { new Vector2(uvOffset, 0), new Vector2(uvOffset, 1), new Vector2(uvDistance, 0), new Vector2(uvDistance, 1) });
+            uvOffset += distance;
         }
 
-        Debug.Log("HRERE: " + roadVerts.Count);
         roadMesh.SetVertices(roadVerts);
         roadMesh.SetTriangles(roadTris, 0);
+        roadMesh.SetUVs(0, roadUVs);
         roadMesh.name = "Road Mesh";
         me.mesh = roadMesh;
+    }
+
+    private void driveCar()
+    {
+        Unity.Mathematics.float3 position;
+        Unity.Mathematics.float3 forward;
+        Unity.Mathematics.float3 up;
+        _currSplineContainer.Evaluate(Time.time, out position, out forward, out up);
+
+
     }
 }
