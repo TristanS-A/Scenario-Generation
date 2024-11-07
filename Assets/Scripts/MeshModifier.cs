@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
+using static UnityEditor.PlayerSettings;
 
 public class MeshModifier : MonoBehaviour
 {
@@ -22,6 +23,7 @@ public class MeshModifier : MonoBehaviour
     void Start()
     {
         GenerateTerrain();
+        applyTextures();
     }
 
     // Update is called once per frame
@@ -52,10 +54,16 @@ public class MeshModifier : MonoBehaviour
         {
             _runningErosion = !_runningErosion;
         }
+
+        if (GUI.Button(new Rect(175 / 2 - 60 + 10, 175, 120, 20), "Re-Apply Textures"))
+        {
+            applyTextures();
+        }
     }
     void GenerateTerrain()
     {
-         _resolution = _terrain.terrainData.heightmapResolution;
+        TerrainData terrainData = _terrain.terrainData;
+         _resolution = terrainData.heightmapResolution;
         _noise = new float[_resolution, _resolution];
 
         for (int y = 0; y < _resolution; y++)
@@ -76,8 +84,58 @@ public class MeshModifier : MonoBehaviour
             }
         }
 
-        _terrain.terrainData.SetHeights(0, 0, _noise);
-         
+        terrainData.SetHeights(0, 0, _noise);        
+    }
+
+    private void applyTextures()
+    {
+        TerrainData terrainData = _terrain.terrainData;
+        float[,,] splatmapData = new float[terrainData.alphamapWidth, terrainData.alphamapHeight, terrainData.alphamapLayers];
+
+        for (int y = 0; y < terrainData.alphamapHeight; y++)
+        {
+            for (int x = 0; x < terrainData.alphamapWidth; x++)
+            {
+
+                // read the height at this location
+                float height = _noise[x, y];
+
+                // determine the mix of textures 1, 2 & 3 to use 
+                // (using a vector3, since it can be lerped & normalized)
+
+                float neighborHeightDiff = 0;
+                if (x > 0 && y > 0 && x < _resolution - 1 && y < _resolution - 1)
+                {
+                    neighborHeightDiff = getNeighborHeightChange(new Vector2Int(x, y));
+                }
+
+                Vector3 splat = new Vector3(0, 1, 0);
+
+                //Or use: if (Vector3.Dot(_terrain.terrainData.GetInterpolatedNormal((float)y / _resolution, (float)x / _resolution), Vector3.up) < 0.9f)
+                if (height > 0.12f)
+                {
+                    splat = new Vector3(0, 0, 1);
+                }
+                else
+                {
+                    if (neighborHeightDiff > 2f)
+                    {
+                        splat = new Vector3(0, 1, 0);
+                    }
+                    else
+                    {
+                        splat = new Vector3(1, 0, 0);
+                    }
+                }
+
+                // now assign the values to the correct location in the array
+                splat.Normalize();
+                splatmapData[x, y, 0] = splat.x;
+                splatmapData[x, y, 1] = splat.y;
+                splatmapData[x, y, 2] = splat.z;
+            }
+        }
+        terrainData.SetAlphamaps(0, 0, splatmapData);
     }
 
     void RunAStar()
@@ -235,5 +293,19 @@ public class MeshModifier : MonoBehaviour
 
 
         return newDirection;
+    }
+
+    private float getNeighborHeightChange(Vector2Int point)
+    {
+        Vector3Int off = new Vector3Int(1, 1, 0);
+        float hC = _terrain.terrainData.GetHeight(point.y, point.x);
+        float hL = _terrain.terrainData.GetHeight(point.y, point.x - off.x);
+        float hR = _terrain.terrainData.GetHeight(point.y, point.x + off.x);
+        float hD = _terrain.terrainData.GetHeight(point.y - off.y, point.x);
+        float hU = _terrain.terrainData.GetHeight(point.y + off.y, point.x);
+
+        float totalHightChange = Mathf.Abs(hL - hC) + Mathf.Abs(hR - hC) + Mathf.Abs(hD - hC) + Mathf.Abs(hU - hC);
+
+        return totalHightChange;
     }
 }
