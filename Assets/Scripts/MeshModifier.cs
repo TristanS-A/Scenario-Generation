@@ -14,6 +14,8 @@ public class MeshModifier : MonoBehaviour
     [SerializeField] private GameObject _spline;
     [SerializeField] private MeshFilter _currRoadMeshFilter;
     [SerializeField] private GameObject _car;
+    [SerializeField] private GameObject _startingLoc;
+    [SerializeField] private GameObject _endLoc;
     private float _minVolume = 0.01f;
     private int _resolution;
     private float[,] _currNoise;
@@ -21,6 +23,7 @@ public class MeshModifier : MonoBehaviour
     private float _friction = 0.05f;
     private float _depositionRate = 1f;
     private float _evapRate = 0.001f;
+    private float _smoothAmount = 0.5f;
     private bool _runningErosion = false;
     private int _gridMaskSize = 5;
     private float _maxAStarSlope = 1f;
@@ -96,6 +99,9 @@ public class MeshModifier : MonoBehaviour
         {
             _keepCamBehindCar = !_keepCamBehindCar;
         }
+
+        GUI.Label(new Rect(175 / 2 - 150 / 2 + 15, 275, 150, 20), "Erosion Smoothing: " + _smoothAmount.ToString("0.00"));
+        _smoothAmount = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 295, 80, 20), _smoothAmount, 0, 1);
     }
     void GenerateTerrain()
     {
@@ -108,7 +114,7 @@ public class MeshModifier : MonoBehaviour
             for (int x = 0; x < _resolution; x++)
             {
                 float value = 0;
-                for (float octive = 2f; octive <= 4f; octive*= 2)
+                for (float octive = 1f; octive <= 4f; octive*= 2)
                 {
                     float scale = octive / (_resolution / 2f);
                     value += (1f / octive) * Mathf.PerlinNoise(x * scale, y * scale);
@@ -152,7 +158,7 @@ public class MeshModifier : MonoBehaviour
                 Vector3 splat = new Vector3(0, 1, 0);
 
                 //Or use: if (Vector3.Dot(_terrain.terrainData.GetInterpolatedNormal((float)y / _resolution, (float)x / _resolution), Vector3.up) < 0.9f)
-                if (height > 0.12f)
+                if (height > 0.3f)
                 {
                     splat = new Vector3(0, 0, 1);
                 }
@@ -181,7 +187,14 @@ public class MeshModifier : MonoBehaviour
     void RunAStar()
     {
         AStar aStar = new AStar();
-        List<Vector2Int> path = aStar.generatePath(_currNoise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0), _gridMaskSize, _maxAStarSlope);
+
+        _startingLoc.transform.position = new Vector3(Mathf.Clamp(_startingLoc.transform.position.x, 0, _resolution - 1), _startingLoc.transform.position.y, Mathf.Clamp(_startingLoc.transform.position.z, 0, _resolution - 1));
+        _endLoc.transform.position = new Vector3(Mathf.Clamp(_endLoc.transform.position.x, 0, _resolution - 1), _endLoc.transform.position.y, Mathf.Clamp(_endLoc.transform.position.z, 0, _resolution - 1));
+
+        Vector2Int start = new Vector2Int((int)_startingLoc.transform.position.x, (int)_startingLoc.transform.position.z);
+        Vector2Int end = new Vector2Int((int)_endLoc.transform.position.x, (int)_endLoc.transform.position.z);
+
+        List<Vector2Int> path = aStar.generatePath(_currNoise, start, end, _gridMaskSize, _maxAStarSlope);
         Debug.Log("Path segment count: " + path.Count);
 
         GeneratePointConnectorVisual(path);
@@ -201,7 +214,7 @@ public class MeshModifier : MonoBehaviour
 
             // Accelerate particle using newtonian mechanics using the surface normal.
             drop.speed += new Vector2(newDir.x, newDir.y).normalized;  // F = ma, so a = F/m
-            drop.pos += drop.speed.normalized;
+            drop.pos += drop.speed.normalized * 0.5f;
             drop.speed *= (1.0f - _friction);  // Friction Factor
 
             if ((int)Mathf.Floor(drop.pos.x) < 0 || (int)Mathf.Floor(drop.pos.y) < 0 || (int)Mathf.Floor(drop.pos.x) >= _resolution || (int)Mathf.Floor(drop.pos.y) >= _resolution) break;
@@ -226,14 +239,19 @@ public class MeshModifier : MonoBehaviour
 
                 if (maxsediment > 0)
                 {
-                    scale = Mathf.Max(0, 1 - (drop.sediment / maxsediment));
+                    scale = Mathf.Max(0, 1);
                 }
 
-                _nextNoise[dropPos.x, dropPos.y] -= (scale * sdiff);
+                float newHeight = _nextNoise[dropPos.x, dropPos.y] - (scale * sdiff);
+                float smoothedHeight = calculateAvarageHeight(dropPos.x, dropPos.y);
+
+                _nextNoise[dropPos.x, dropPos.y] = Mathf.Lerp(newHeight, smoothedHeight, _smoothAmount);
+
             }
             else if (drop.sediment >= maxsediment)
             {
-                //_currNoise[dropPos.x, dropPos.y] += (drop.sediment * sdiff);
+                drop.sediment -= drop.sediment * sdiff;
+                _currNoise[dropPos.x, dropPos.y] += (drop.sediment * sdiff);
                 //drop.sediment -= drop.sediment * sdiff;
             }
 
@@ -315,6 +333,23 @@ public class MeshModifier : MonoBehaviour
 
 
         return newDirection;
+    }
+
+    private float calculateAvarageHeight(int x, int y)
+    {
+        float totalHeight = _nextNoise[x, y];
+        totalHeight += _nextNoise[x - 1, y - 1];
+        totalHeight += _nextNoise[x, y - 1];
+        totalHeight += _nextNoise[x + 1, y - 1];
+        totalHeight += _nextNoise[x - 1, y];
+        totalHeight += _nextNoise[x + 1, y];
+        totalHeight += _nextNoise[x - 1, y + 1];
+        totalHeight += _nextNoise[x, y + 1];
+        totalHeight += _nextNoise[x + 1, y + 1];
+
+        totalHeight /= 9f;
+
+        return totalHeight; 
     }
 
     private float getNeighborHeightChange(Vector2Int point)

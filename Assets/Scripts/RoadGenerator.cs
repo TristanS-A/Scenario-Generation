@@ -46,23 +46,15 @@ public static class RoadGenerator
         float uvOffset = 0;
         int length = splineVertsP2.Count;
 
-        for (int i = 1; i <= length; i++)
+        for (int i = 1; i < length; i++)
         {
             Vector3 p1 = splineVertsP1[i - 1];
             Vector3 p2 = splineVertsP2[i - 1];
             Vector3 p3;
             Vector3 p4;
 
-            if (i == length)
-            {
-                p3 = splineVertsP1[0];
-                p4 = splineVertsP2[0];
-            }
-            else
-            {
-                p3 = splineVertsP1[i];
-                p4 = splineVertsP2[i];
-            }
+            p3 = splineVertsP1[i];
+            p4 = splineVertsP2[i];
 
             offset = 4 * (i - 1);
 
