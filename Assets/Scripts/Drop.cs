@@ -8,7 +8,7 @@ public class Drop
     public float volume = 1;
     public Vector2 speed = Vector2.zero;
     public float sediment = 0;
-    public float pickup = 0.02f;
+    public float pickup = 0.025f;
 
     public Drop(Vector2 pos)
     {

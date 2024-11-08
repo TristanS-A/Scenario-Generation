@@ -16,7 +16,8 @@ public class MeshModifier : MonoBehaviour
     [SerializeField] private GameObject _car;
     private float _minVolume = 0.01f;
     private int _resolution;
-    private float[,] _noise;
+    private float[,] _currNoise;
+    private float[,] _nextNoise;
     private float _friction = 0.05f;
     private float _depositionRate = 1f;
     private float _evapRate = 0.001f;
@@ -26,7 +27,7 @@ public class MeshModifier : MonoBehaviour
 
     private List<Vector3> _splineVertsP1 = new List<Vector3>();
     private List<Vector3> _splineVertsP2 = new List<Vector3>();
-    private int _splineResolution = 1000;
+    private int _splineResolution = 5000;
     private float _roadWidth = 1.5f;
     private SplineContainer _currSplineContainer;
     private GameObject _currCar;
@@ -100,7 +101,7 @@ public class MeshModifier : MonoBehaviour
     {
         TerrainData terrainData = _terrain.terrainData;
          _resolution = terrainData.heightmapResolution;
-        _noise = new float[_resolution, _resolution];
+        _currNoise = new float[_resolution, _resolution];
 
         for (int y = 0; y < _resolution; y++)
         {
@@ -116,11 +117,12 @@ public class MeshModifier : MonoBehaviour
                 Vector2 center =  new Vector2(_resolution / 2f, _resolution / 2f);
                 Vector2 pos = new Vector2(x, y);
                 value -= (center - pos).magnitude / _resolution;
-                _noise[x, y] = Mathf.Max(0, value) / 2f;
+                _currNoise[x, y] = Mathf.Max(0, value) / 2f;
             }
         }
 
-        terrainData.SetHeights(0, 0, _noise);        
+        _nextNoise = _currNoise;
+        terrainData.SetHeights(0, 0, _currNoise);        
     }
 
     private void applyTerrainTextures()
@@ -136,7 +138,7 @@ public class MeshModifier : MonoBehaviour
             {
 
                 // read the height at this location
-                float height = _noise[x, y];
+                float height = _currNoise[x, y];
 
                 // determine the mix of textures 1, 2 & 3 to use 
                 // (using a vector3, since it can be lerped & normalized)
@@ -179,7 +181,7 @@ public class MeshModifier : MonoBehaviour
     void RunAStar()
     {
         AStar aStar = new AStar();
-        List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0), _gridMaskSize, _maxAStarSlope);
+        List<Vector2Int> path = aStar.generatePath(_currNoise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0), _gridMaskSize, _maxAStarSlope);
         Debug.Log("Path segment count: " + path.Count);
 
         GeneratePointConnectorVisual(path);
@@ -195,7 +197,7 @@ public class MeshModifier : MonoBehaviour
             Vector2Int dropPos = new Vector2Int((int)Mathf.Floor(drop.pos.x), (int)Mathf.Floor(drop.pos.y));
             if (dropPos.x <= 0 || dropPos.y <= 0 || dropPos.x >= _resolution - 1 || dropPos.y >= _resolution - 1) break;
 
-            Vector2Int newDir = CalculateNewFlowDirection(_noise, dropPos, drop.speed.normalized);
+            Vector2Int newDir = CalculateNewFlowDirection(ref _currNoise, dropPos, drop.speed.normalized);
 
             // Accelerate particle using newtonian mechanics using the surface normal.
             drop.speed += new Vector2(newDir.x, newDir.y).normalized;  // F = ma, so a = F/m
@@ -204,7 +206,7 @@ public class MeshModifier : MonoBehaviour
 
             if ((int)Mathf.Floor(drop.pos.x) < 0 || (int)Mathf.Floor(drop.pos.y) < 0 || (int)Mathf.Floor(drop.pos.x) >= _resolution || (int)Mathf.Floor(drop.pos.y) >= _resolution) break;
 
-            float deltaHeight = (_noise[dropPos.x, dropPos.y] - _noise[(int)Mathf.Floor(drop.pos.x), (int)Mathf.Floor(drop.pos.y)]);
+            float deltaHeight = (_currNoise[dropPos.x, dropPos.y] - _currNoise[(int)Mathf.Floor(drop.pos.x), (int)Mathf.Floor(drop.pos.y)]);
 
             // Compute sediment capacity difference
             float maxsediment = drop.volume * deltaHeight; //Uses delta height of old vs new height
@@ -216,32 +218,25 @@ public class MeshModifier : MonoBehaviour
             }
 
             float sdiff = maxsediment;
+            float scale = 0;
 
             if (drop.sediment < maxsediment)
             {
-                /*
-                 * drop.sediment += drop.volume * deltaHeight;
-                drop.sediment -= _depositionRate * sdiff;
-                _noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);   */
                 drop.sediment += sdiff * drop.pickup;
-
-                float scale = 0;
 
                 if (maxsediment > 0)
                 {
                     scale = Mathf.Max(0, 1 - (drop.sediment / maxsediment));
                 }
 
-                _noise[dropPos.x, dropPos.y] -= (scale * sdiff);
+                _nextNoise[dropPos.x, dropPos.y] -= (scale * sdiff);
             }
             else if (drop.sediment >= maxsediment)
             {
-                //drop.sediment -= drop.volume * deltaHeight;
-                //drop.sediment += drop.volume * deltaHeight;
-                //_noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);
+                //_currNoise[dropPos.x, dropPos.y] += (drop.sediment * sdiff);
+                //drop.sediment -= drop.sediment * sdiff;
             }
 
-            //Debug.Log(Mathf.Max(0, 1 - (drop.sediment / maxsediment)));
 
             /////////Calcuate avarage height from neighbors to smooth erosion
             /////////Make less erosion depending on how full the sediment level is
@@ -250,10 +245,11 @@ public class MeshModifier : MonoBehaviour
             drop.volume *= (1.0f - _evapRate);
         }
 
-        _terrain.terrainData.SetHeights(0, 0, _noise);
+        _currNoise = _nextNoise;
+        _terrain.terrainData.SetHeights(0, 0, _currNoise);
     }
 
-    Vector2Int CalculateNewFlowDirection(float[,] noise, Vector2Int pos, Vector2 currDirection)
+    Vector2Int CalculateNewFlowDirection(ref float[,] noise, Vector2Int pos, Vector2 currDirection)
     {
         Dictionary<float, Vector2Int> map = new Dictionary<float, Vector2Int>();
         List<float> neighbors = new List<float>();
@@ -310,12 +306,12 @@ public class MeshModifier : MonoBehaviour
         Vector2Int minDirection2 = map[min2Value];
 
         ////Random of the lowest 2 directions
-        //Vector2Int newDirection = UnityEngine.Random.Range(0, 2) == 1 ? minDirection1 : minDirection2;
+        Vector2Int newDirection = UnityEngine.Random.Range(0, 2) == 1 ? minDirection1 : minDirection2;
 
 
         ////Random of the lowest 2 directions with closest direction being more likely
-        float changeDir = Vector2.Dot(((Vector2)minDirection1 + (Vector2)minDirection2).normalized, currDirection);
-        Vector2Int newDirection = UnityEngine.Random.Range(-1f, 1f) < changeDir ? minDirection1 : minDirection2;
+        //float changeDir = Vector2.Dot(((Vector2)minDirection1 + (Vector2)minDirection2).normalized, currDirection);
+        //Vector2Int newDirection = UnityEngine.Random.Range(-1f, 1f) < changeDir ? minDirection1 : minDirection2;
 
 
         return newDirection;
@@ -381,8 +377,8 @@ public class MeshModifier : MonoBehaviour
             GameObject empty = new GameObject();
             LineRenderer line = empty.AddComponent<LineRenderer>();
 
-            Vector3 pos1 = new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z);
-            Vector3 pos2 = new Vector3(path[i + 1].x * scale.x, _noise[path[i + 1].y, path[i + 1].x] * scale.y, path[i + 1].y * scale.z);
+            Vector3 pos1 = new Vector3(path[i].x * scale.x, _currNoise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z);
+            Vector3 pos2 = new Vector3(path[i + 1].x * scale.x, _currNoise[path[i + 1].y, path[i + 1].x] * scale.y, path[i + 1].y * scale.z);
 
             totalLength += (pos2 - pos1).magnitude;
 
@@ -410,7 +406,7 @@ public class MeshModifier : MonoBehaviour
 
         for (int i = 0; i < path.Count; i++)
         {
-            spline.Spline.Add(new BezierKnot(new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z)), 0);
+            spline.Spline.Add(new BezierKnot(new Vector3(path[i].x * scale.x, _currNoise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z)), 0);
         }
 
         spline.GetComponent<MeshRenderer>().enabled = false;
