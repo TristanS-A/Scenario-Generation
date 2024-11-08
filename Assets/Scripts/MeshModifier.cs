@@ -11,6 +11,7 @@ public class MeshModifier : MonoBehaviour
 {
     [SerializeField] private Terrain _terrain;
     [SerializeField] private GameObject _spline;
+    [SerializeField] private MeshFilter _currRoadMeshFilter;
     [SerializeField] private GameObject _car;
     private float _minVolume = 0.01f;
     private int _resolution;
@@ -27,8 +28,12 @@ public class MeshModifier : MonoBehaviour
     private int _splineResolution = 1000;
     private float _roadWidth = 1.5f;
     private SplineContainer _currSplineContainer;
-    private MeshFilter _currRoadMeshFilter;
-    public MeshFilter me;
+    private GameObject _currCar;
+    private bool _carIsDriving = false;
+    private float _carSpeedDampener = 0.01f;
+    private float _carSpeed = 1;
+    private float _roadOffsetY = 1;
+    private bool _keepCamBehindCar = true;
 
     // Start is called before the first frame update
     void Start()
@@ -44,11 +49,16 @@ public class MeshModifier : MonoBehaviour
         {
             Erode();
         }
+
+        if (_carIsDriving)
+        {
+            driveCar();
+        }
     }
 
     void OnGUI()
     {
-        GUI.Box(new Rect(10, 10, 175, 165), "Test Menu");
+        GUI.Box(new Rect(10, 10, 175, 240), "Test Menu");
 
         GUI.Label(new Rect(175 / 2 - 165 / 2 + 10, 35, 165, 20), "Anisotropic A* Grid Size: " + _gridMaskSize.ToString());
         _gridMaskSize = (int)GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 60, 80, 20), _gridMaskSize, 1, 20);
@@ -59,6 +69,8 @@ public class MeshModifier : MonoBehaviour
         if (GUI.Button(new Rect(175 / 2 - 40 + 10, 120, 80, 20), "Run A*"))
         {
             RunAStar();
+            _currCar = Instantiate(_car);
+            _carIsDriving = true;
         }
 
         if (GUI.Button(new Rect(175 / 2 - 50 + 10, 145, 100, 20), _runningErosion ? "Stop Erosion" : "Start Erosion"))
@@ -70,6 +82,9 @@ public class MeshModifier : MonoBehaviour
         {
             applyTextures();
         }
+
+        GUI.Label(new Rect(175 / 2 - 115 / 2 + 15, 205, 115, 20), "Car Speed: " + _carSpeed.ToString("0.00"));
+        _carSpeed = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 225, 80, 20), _carSpeed, 0, 20);
     }
     void GenerateTerrain()
     {
@@ -165,7 +180,6 @@ public class MeshModifier : MonoBehaviour
 
         SplineContainer spline = Instantiate(_spline).GetComponent<SplineContainer>();
         _currSplineContainer = spline;
-        _currRoadMeshFilter = spline.gameObject.GetComponent<MeshFilter>();
 
         float totalLength = 0;
 
@@ -418,7 +432,8 @@ public class MeshModifier : MonoBehaviour
         roadMesh.SetTriangles(roadTris, 0);
         roadMesh.SetUVs(0, roadUVs);
         roadMesh.name = "Road Mesh";
-        me.mesh = roadMesh;
+        _currRoadMeshFilter.mesh = roadMesh;
+        _currRoadMeshFilter.transform.position = new Vector3(0, _roadOffsetY, 0);
     }
 
     private void driveCar()
@@ -426,8 +441,27 @@ public class MeshModifier : MonoBehaviour
         Unity.Mathematics.float3 position;
         Unity.Mathematics.float3 forward;
         Unity.Mathematics.float3 up;
-        _currSplineContainer.Evaluate(Time.time, out position, out forward, out up);
+        float time = Time.time * _carSpeedDampener * _carSpeed;
+        _currSplineContainer.Evaluate(time - (int)time, out position, out forward, out up);
 
+        Unity.Mathematics.float3 carOffset = new Vector3(0.5f, _roadOffsetY + _currCar.transform.lossyScale.y * 0.5f, 0);
 
+        if (_currCar != null)
+        {
+            _currCar.transform.position = position + carOffset;
+            _currCar.transform.LookAt(_currCar.transform.position + (Vector3)forward);
+        }
+
+        Vector3 camLookOffset = new Vector3(Mathf.Cos(Time.time * 0.3f), Mathf.Cos(Time.time * 0.2f) * 0.2f, Mathf.Sin(Time.time * 0.3f));
+        Vector3 camPos = _currCar.transform.position + (Vector3)up * 0.5f + camLookOffset;
+
+        if (_keepCamBehindCar)
+        {
+            camPos -= ((Vector3)forward).normalized * 2f;
+        }
+
+        Vector3 camDirToCar = (_currCar.transform.position - camPos).normalized;
+        Camera.main.transform.position = camPos - camDirToCar * 4 + new Vector3(0, Mathf.Abs(Vector3.Dot(up, Vector3.right)), 0) * 4;
+        Camera.main.transform.LookAt(_currCar.transform.position);
     }
 }
