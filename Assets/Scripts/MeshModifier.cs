@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Splines;
@@ -35,14 +36,12 @@ public class MeshModifier : MonoBehaviour
     private float _roadOffsetY = 1;
     private bool _keepCamBehindCar = true;
 
-    // Start is called before the first frame update
     void Start()
     {
         GenerateTerrain();
-        applyTextures();
+        applyTerrainTextures();
     }
 
-    // Update is called once per frame
     void FixedUpdate()
     {
         if (_runningErosion)
@@ -58,7 +57,7 @@ public class MeshModifier : MonoBehaviour
 
     void OnGUI()
     {
-        GUI.Box(new Rect(10, 10, 175, 240), "Test Menu");
+        GUI.Box(new Rect(10, 10, 175, 300), "Test Menu");
 
         GUI.Label(new Rect(175 / 2 - 165 / 2 + 10, 35, 165, 20), "Anisotropic A* Grid Size: " + _gridMaskSize.ToString());
         _gridMaskSize = (int)GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 60, 80, 20), _gridMaskSize, 1, 20);
@@ -69,6 +68,12 @@ public class MeshModifier : MonoBehaviour
         if (GUI.Button(new Rect(175 / 2 - 40 + 10, 120, 80, 20), "Run A*"))
         {
             RunAStar();
+
+            if (_currCar != null)
+            {
+                Destroy(_currCar);
+            }
+
             _currCar = Instantiate(_car);
             _carIsDriving = true;
         }
@@ -80,11 +85,16 @@ public class MeshModifier : MonoBehaviour
 
         if (GUI.Button(new Rect(175 / 2 - 60 + 10, 175, 120, 20), "Re-Apply Textures"))
         {
-            applyTextures();
+            applyTerrainTextures();
         }
 
         GUI.Label(new Rect(175 / 2 - 115 / 2 + 15, 205, 115, 20), "Car Speed: " + _carSpeed.ToString("0.00"));
         _carSpeed = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 225, 80, 20), _carSpeed, 0, 20);
+
+        if (GUI.Button(new Rect(175 / 2 - 75 + 10, 250, 150, 20), !_keepCamBehindCar ? "Keep Cam Behind Car" : "Have Cam Circle Car"))
+        {
+            _keepCamBehindCar = !_keepCamBehindCar;
+        }
     }
     void GenerateTerrain()
     {
@@ -113,8 +123,10 @@ public class MeshModifier : MonoBehaviour
         terrainData.SetHeights(0, 0, _noise);        
     }
 
-    private void applyTextures()
+    private void applyTerrainTextures()
     {
+        //Tutorial for splatmapping: https://discussions.unity.com/t/how-to-automatically-apply-different-textures-on-terrain-based-on-height/2013/2?clickref=1011lzS3tiIW&utm_source=partnerize&utm_medium=affiliate&utm_campaign=unity_affiliate
+       
         TerrainData terrainData = _terrain.terrainData;
         float[,,] splatmapData = new float[terrainData.alphamapWidth, terrainData.alphamapHeight, terrainData.alphamapLayers];
 
@@ -168,53 +180,10 @@ public class MeshModifier : MonoBehaviour
     {
         AStar aStar = new AStar();
         List<Vector2Int> path = aStar.generatePath(_noise, new Vector2Int(_resolution - 1, _resolution - 1), new Vector2Int(0, 0), _gridMaskSize, _maxAStarSlope);
-        Debug.Log(path.Count);
+        Debug.Log("Path segment count: " + path.Count);
 
-        Vector3 scale = _terrain.terrainData.heightmapScale;
-
-        SplineContainer[] splineContainers = FindObjectsOfType<SplineContainer>();
-        foreach (SplineContainer sc in splineContainers)
-        {
-            Destroy(sc.gameObject);
-        }
-
-        SplineContainer spline = Instantiate(_spline).GetComponent<SplineContainer>();
-        _currSplineContainer = spline;
-
-        float totalLength = 0;
-
-        for (int i = 0; i < path.Count; i++)
-        {
-            spline.Spline.Add(new BezierKnot(new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z)), 0);
-        }
-
-        /*LineRenderer[] lineRenderers = FindObjectsOfType<LineRenderer>();
-        foreach (LineRenderer lr in lineRenderers)
-        {
-            Destroy(lr.gameObject);
-        }
-
-        for (int i = 0; i < path.Count - 1; i++)
-        {
-            
-            GameObject empty = new GameObject();
-            LineRenderer line = empty.AddComponent<LineRenderer>();
-
-            Vector3 pos1 = new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z);
-            Vector3 pos2 = new Vector3(path[i + 1].x * scale.x, _noise[path[i + 1].y, path[i + 1].x] * scale.y, path[i + 1].y * scale.z);
-
-            totalLength += (pos2 - pos1).magnitude;
-
-            line.enabled = true;
-            empty.transform.position = pos1;
-            line.SetPosition(0, pos1);
-            line.SetPosition(1, pos2);
-        }*/
-
-        Debug.Log("Total Path Length: " + totalLength);
-
-        GetSplineVerts();
-        GenerateRoadMesh();
+        GeneratePointConnectorVisual(path);
+        GenerateRoad(path);
     }
 
     void Erode()
@@ -226,10 +195,10 @@ public class MeshModifier : MonoBehaviour
             Vector2Int dropPos = new Vector2Int((int)Mathf.Floor(drop.pos.x), (int)Mathf.Floor(drop.pos.y));
             if (dropPos.x <= 0 || dropPos.y <= 0 || dropPos.x >= _resolution - 1 || dropPos.y >= _resolution - 1) break;
 
-            Vector2Int gradient = CalculateGradient(_noise, dropPos, drop.speed.normalized);
+            Vector2Int newDir = CalculateNewFlowDirection(_noise, dropPos, drop.speed.normalized);
 
             // Accelerate particle using newtonian mechanics using the surface normal.
-            drop.speed += new Vector2(gradient.x, gradient.y).normalized;  // F = ma, so a = F/m
+            drop.speed += new Vector2(newDir.x, newDir.y).normalized;  // F = ma, so a = F/m
             drop.pos += drop.speed.normalized;
             drop.speed *= (1.0f - _friction);  // Friction Factor
 
@@ -250,16 +219,29 @@ public class MeshModifier : MonoBehaviour
 
             if (drop.sediment < maxsediment)
             {
-                drop.sediment += drop.volume * deltaHeight;
+                /*
+                 * drop.sediment += drop.volume * deltaHeight;
                 drop.sediment -= _depositionRate * sdiff;
-                _noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);        
+                _noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);   */
+                drop.sediment += sdiff * drop.pickup;
+
+                float scale = 0;
+
+                if (maxsediment > 0)
+                {
+                    scale = Mathf.Max(0, 1 - (drop.sediment / maxsediment));
+                }
+
+                _noise[dropPos.x, dropPos.y] -= (scale * sdiff);
             }
             else if (drop.sediment >= maxsediment)
             {
-                drop.sediment -= drop.volume * deltaHeight;
-                drop.sediment += _depositionRate * sdiff;
+                //drop.sediment -= drop.volume * deltaHeight;
+                //drop.sediment += drop.volume * deltaHeight;
                 //_noise[dropPos.x, dropPos.y] -= (drop.volume * _depositionRate * sdiff);
             }
+
+            //Debug.Log(Mathf.Max(0, 1 - (drop.sediment / maxsediment)));
 
             /////////Calcuate avarage height from neighbors to smooth erosion
             /////////Make less erosion depending on how full the sediment level is
@@ -271,7 +253,7 @@ public class MeshModifier : MonoBehaviour
         _terrain.terrainData.SetHeights(0, 0, _noise);
     }
 
-    Vector2Int CalculateGradient(float[,] noise, Vector2Int pos, Vector2 currDirection)
+    Vector2Int CalculateNewFlowDirection(float[,] noise, Vector2Int pos, Vector2 currDirection)
     {
         Dictionary<float, Vector2Int> map = new Dictionary<float, Vector2Int>();
         List<float> neighbors = new List<float>();
@@ -353,89 +335,6 @@ public class MeshModifier : MonoBehaviour
         return totalHightChange;
     }
 
-    private void GetRoadWidthSegment(float t, out Vector3 pos1, out Vector3 pos2)
-    {
-        Unity.Mathematics.float3 position;
-        Unity.Mathematics.float3 forward;
-        Unity.Mathematics.float3 up;
-        _currSplineContainer.Evaluate(t, out position, out forward, out up);
-
-         Unity.Mathematics.float3 right = Vector3.Cross(forward, up).normalized;
-        pos1 = position + _roadWidth * right;
-        pos2 = position - _roadWidth * right;
-    }
-
-    private void GetSplineVerts()
-    {
-        _splineVertsP1 = new();
-        _splineVertsP2 = new();
-
-        float step = 1f / (float)_splineResolution;
-        for (int i = 0; i < _splineResolution; i++)
-        {
-            float time = step * i;
-            GetRoadWidthSegment(time, out Vector3 pos1, out Vector3 pos2);
-            _splineVertsP1.Add(pos1);
-            _splineVertsP2.Add(pos2);
-        }
-    }
-
-    private void GenerateRoadMesh()
-    {
-        Mesh roadMesh = new Mesh();
-        List<Vector3> roadVerts = new List<Vector3>();
-        List<int> roadTris = new List<int>();
-        List<Vector2> roadUVs = new List<Vector2>();
-
-        int offset = 0;
-        float uvOffset = 0;
-        int length = _splineVertsP2.Count;
-
-        for (int i = 1; i <= length; i++)
-        {
-            Vector3 p1 = _splineVertsP1[i - 1];
-            Vector3 p2 = _splineVertsP2[i - 1];
-            Vector3 p3;
-            Vector3 p4;
-
-            if (i == length)
-            {
-                p3 = _splineVertsP1[0];
-                p4 = _splineVertsP2[0];
-            }
-            else
-            {
-                p3 = _splineVertsP1[i];
-                p4 = _splineVertsP2[i];
-            }
-
-            offset = 4 * (i - 1);
-
-            int t1 = offset;
-            int t2 = offset + 2;
-            int t3 = offset + 3;
-
-            int t4 = t3;
-            int t5 = offset + 1;
-            int t6 = t1;
-
-            roadVerts.AddRange(new List<Vector3> { p1, p2, p3, p4 });
-            roadTris.AddRange(new List<int> { t1, t2, t3, t4, t5, t6 });
-
-            float distance = Vector3.Distance(p1, p3) / 4f;
-            float uvDistance = uvOffset + distance;
-            roadUVs.AddRange(new List<Vector2> { new Vector2(uvOffset, 0), new Vector2(uvOffset, 1), new Vector2(uvDistance, 0), new Vector2(uvDistance, 1) });
-            uvOffset += distance;
-        }
-
-        roadMesh.SetVertices(roadVerts);
-        roadMesh.SetTriangles(roadTris, 0);
-        roadMesh.SetUVs(0, roadUVs);
-        roadMesh.name = "Road Mesh";
-        _currRoadMeshFilter.mesh = roadMesh;
-        _currRoadMeshFilter.transform.position = new Vector3(0, _roadOffsetY, 0);
-    }
-
     private void driveCar()
     {
         Unity.Mathematics.float3 position;
@@ -455,13 +354,73 @@ public class MeshModifier : MonoBehaviour
         Vector3 camLookOffset = new Vector3(Mathf.Cos(Time.time * 0.3f), Mathf.Cos(Time.time * 0.2f) * 0.2f, Mathf.Sin(Time.time * 0.3f));
         Vector3 camPos = _currCar.transform.position + (Vector3)up * 0.5f + camLookOffset;
 
-        if (_keepCamBehindCar)
+        if (!_keepCamBehindCar)
         {
             camPos -= ((Vector3)forward).normalized * 2f;
         }
 
         Vector3 camDirToCar = (_currCar.transform.position - camPos).normalized;
-        Camera.main.transform.position = camPos - camDirToCar * 4 + new Vector3(0, Mathf.Abs(Vector3.Dot(up, Vector3.right)), 0) * 4;
+        Camera.main.transform.position = camPos - camDirToCar * 4 + new Vector3(0, Mathf.Abs(Vector3.Dot(up, Vector3.right)), 0) * 6;
         Camera.main.transform.LookAt(_currCar.transform.position);
+    }
+
+    private void GeneratePointConnectorVisual(List<Vector2Int> path)
+    {
+        Vector3 scale = _terrain.terrainData.heightmapScale;
+
+        LineRenderer[] lineRenderers = FindObjectsOfType<LineRenderer>();
+        foreach (LineRenderer lr in lineRenderers)
+        {
+            Destroy(lr.gameObject);
+        }
+
+        float totalLength = 0;
+        for (int i = 0; i < path.Count - 1; i++)
+        {
+
+            GameObject empty = new GameObject();
+            LineRenderer line = empty.AddComponent<LineRenderer>();
+
+            Vector3 pos1 = new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z);
+            Vector3 pos2 = new Vector3(path[i + 1].x * scale.x, _noise[path[i + 1].y, path[i + 1].x] * scale.y, path[i + 1].y * scale.z);
+
+            totalLength += (pos2 - pos1).magnitude;
+
+            line.enabled = true;
+            empty.transform.position = pos1;
+            line.SetPosition(0, pos1);
+            line.SetPosition(1, pos2);
+        }
+
+        Debug.Log("Total Path Length: " + totalLength);
+    }
+
+    private void GenerateRoadSpline(List<Vector2Int> path)
+    {
+        Vector3 scale = _terrain.terrainData.heightmapScale;
+
+        SplineContainer[] splineContainers = FindObjectsOfType<SplineContainer>();
+        foreach (SplineContainer sc in splineContainers)
+        {
+            Destroy(sc.gameObject);
+        }
+
+        SplineContainer spline = Instantiate(_spline).GetComponent<SplineContainer>();
+        _currSplineContainer = spline;
+
+        for (int i = 0; i < path.Count; i++)
+        {
+            spline.Spline.Add(new BezierKnot(new Vector3(path[i].x * scale.x, _noise[path[i].y, path[i].x] * scale.y, path[i].y * scale.z)), 0);
+        }
+
+        spline.GetComponent<MeshRenderer>().enabled = false;
+    }
+
+    public void GenerateRoad(List<Vector2Int> path)
+    {
+        GenerateRoadSpline(path);
+        RoadGenerator.GetSplineVerts(_currSplineContainer, _roadWidth, _splineResolution, ref _splineVertsP1, ref _splineVertsP2);
+        _currRoadMeshFilter.mesh = RoadGenerator.GenerateRoadMesh(_splineVertsP1, _splineVertsP2);
+        _currRoadMeshFilter.transform.position = new Vector3(0, _roadOffsetY, 0);
     }
 }
