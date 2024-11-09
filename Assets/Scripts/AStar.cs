@@ -76,7 +76,6 @@ public class AStar
 
             visited[currNode.centerPoint] = true; //Sets the current point as visited
             List<Vector2Int> neighbors = getGridMaskPoints(gridMaskSize, minSegmentSize, noise, currNode.centerPoint, frontierSet, visited); //Gets the neighbors of the current point
-            Debug.Log("NAIGHBOR COUNT: " + neighbors.Count);
             totalNeighborsEvaluated += neighbors.Count;
 
             //While the neighbors exist, update the cameFrom map with them and add them to the priority queue
