@@ -21,11 +21,11 @@ public class MeshModifier : MonoBehaviour
     private float[,] _currNoise;
     private float[,] _nextNoise;
     private float _friction = 0.05f;
-    private float _depositionRate = 1f;
     private float _evapRate = 0.001f;
     private float _smoothAmount = 0.5f;
     private bool _runningErosion = false;
     private int _gridMaskSize = 5;
+    private int _minSegmentSize = 1;
     private float _maxAStarSlope = 1f;
 
     private List<Vector3> _splineVertsP1 = new List<Vector3>();
@@ -61,15 +61,18 @@ public class MeshModifier : MonoBehaviour
 
     void OnGUI()
     {
-        GUI.Box(new Rect(10, 10, 175, 300), "Test Menu");
+        GUI.Box(new Rect(10, 10, 175, 340), "Test Menu");
 
         GUI.Label(new Rect(175 / 2 - 165 / 2 + 10, 35, 165, 20), "Anisotropic A* Grid Size: " + _gridMaskSize.ToString());
         _gridMaskSize = (int)GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 60, 80, 20), _gridMaskSize, 1, 20);
 
-        GUI.Label(new Rect(175 / 2 - 115 / 2 + 10, 35 + 40, 115, 20), "A* Max Slope: " + _maxAStarSlope.ToString("0.00"));
-        _maxAStarSlope = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 60 + 40, 80, 20), _maxAStarSlope, 0, 2);
+        GUI.Label(new Rect(175 / 2 - 145 / 2 + 10, 35 + 40, 155, 20), "Min A* Segment Size: " + _minSegmentSize.ToString());
+        _minSegmentSize = (int)GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 100, 80, 20), _minSegmentSize, 1, _gridMaskSize);
 
-        if (GUI.Button(new Rect(175 / 2 - 40 + 10, 120, 80, 20), "Run A*"))
+        GUI.Label(new Rect(175 / 2 - 115 / 2 + 10, 110, 120, 20), "A* Max Slope: " + _maxAStarSlope.ToString("0.00"));
+        _maxAStarSlope = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 130, 80, 20), _maxAStarSlope, 0, 2);
+
+        if (GUI.Button(new Rect(175 / 2 - 40 + 10, 145, 80, 20), "Run A*"))
         {
             RunAStar();
 
@@ -82,26 +85,26 @@ public class MeshModifier : MonoBehaviour
             _carIsDriving = true;
         }
 
-        if (GUI.Button(new Rect(175 / 2 - 50 + 10, 145, 100, 20), _runningErosion ? "Stop Erosion" : "Start Erosion"))
+        if (GUI.Button(new Rect(175 / 2 - 50 + 10, 170, 100, 20), _runningErosion ? "Stop Erosion" : "Start Erosion"))
         {
             _runningErosion = !_runningErosion;
         }
 
-        if (GUI.Button(new Rect(175 / 2 - 60 + 10, 175, 120, 20), "Re-Apply Textures"))
+        if (GUI.Button(new Rect(175 / 2 - 60 + 10, 200, 120, 20), "Re-Apply Textures"))
         {
             applyTerrainTextures();
         }
 
-        GUI.Label(new Rect(175 / 2 - 115 / 2 + 15, 205, 115, 20), "Car Speed: " + _carSpeed.ToString("0.00"));
-        _carSpeed = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 225, 80, 20), _carSpeed, 0, 20);
+        GUI.Label(new Rect(175 / 2 - 115 / 2 + 15, 230, 115, 20), "Car Speed: " + _carSpeed.ToString("0.00"));
+        _carSpeed = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 250, 80, 20), _carSpeed, 0, 20);
 
-        if (GUI.Button(new Rect(175 / 2 - 75 + 10, 250, 150, 20), !_keepCamBehindCar ? "Keep Cam Behind Car" : "Have Cam Circle Car"))
+        if (GUI.Button(new Rect(175 / 2 - 75 + 10, 275, 150, 20), !_keepCamBehindCar ? "Keep Cam Behind Car" : "Have Cam Circle Car"))
         {
             _keepCamBehindCar = !_keepCamBehindCar;
         }
 
-        GUI.Label(new Rect(175 / 2 - 150 / 2 + 15, 275, 150, 20), "Erosion Smoothing: " + _smoothAmount.ToString("0.00"));
-        _smoothAmount = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 295, 80, 20), _smoothAmount, 0, 1);
+        GUI.Label(new Rect(175 / 2 - 150 / 2 + 15, 300, 150, 20), "Erosion Smoothing: " + _smoothAmount.ToString("0.00"));
+        _smoothAmount = GUI.HorizontalSlider(new Rect(175 / 2 - 40 + 10, 320, 80, 20), _smoothAmount, 0, 1);
     }
     void GenerateTerrain()
     {
@@ -194,7 +197,7 @@ public class MeshModifier : MonoBehaviour
         Vector2Int start = new Vector2Int((int)_startingLoc.transform.position.x, (int)_startingLoc.transform.position.z);
         Vector2Int end = new Vector2Int((int)_endLoc.transform.position.x, (int)_endLoc.transform.position.z);
 
-        List<Vector2Int> path = aStar.generatePath(_currNoise, start, end, _gridMaskSize, _maxAStarSlope);
+        List<Vector2Int> path = aStar.generatePath(_currNoise, start, end, _gridMaskSize, _minSegmentSize, _maxAStarSlope);
         Debug.Log("Path segment count: " + path.Count);
 
         GeneratePointConnectorVisual(path);

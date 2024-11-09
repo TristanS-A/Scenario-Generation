@@ -41,7 +41,7 @@ public class AStar
         }
     }
 
-    public List<Vector2Int> generatePath(float[,] noise, Vector2Int startPoint, Vector2Int goalPoint, int gridMaskSize = 5, float maxSlope = 1)
+    public List<Vector2Int> generatePath(float[,] noise, Vector2Int startPoint, Vector2Int goalPoint, int gridMaskSize = 5, int minSegmentSize = 1, float maxSlope = 1)
     {
         Dictionary<Vector2Int, Vector2Int> cameFrom = new Dictionary<Vector2Int, Vector2Int>();  // to build the flowfield and build the path
         frontier = new PriorityQueue<AStarNode, float>();                   // to store next ones to visit
@@ -75,7 +75,8 @@ public class AStar
             }
 
             visited[currNode.centerPoint] = true; //Sets the current point as visited
-            List<Vector2Int> neighbors = getGridMaskPoints(gridMaskSize, noise, currNode.centerPoint, frontierSet, visited); //Gets the neighbors of the current point
+            List<Vector2Int> neighbors = getGridMaskPoints(gridMaskSize, minSegmentSize, noise, currNode.centerPoint, frontierSet, visited); //Gets the neighbors of the current point
+            Debug.Log("NAIGHBOR COUNT: " + neighbors.Count);
             totalNeighborsEvaluated += neighbors.Count;
 
             //While the neighbors exist, update the cameFrom map with them and add them to the priority queue
@@ -119,11 +120,12 @@ public class AStar
             current = cameFrom[current];
         }
         
+        path.Add(start.centerPoint);
 
         return path;
     }
 
-    List<Vector2Int> getGridMaskPoints(int maskSize, float[,] noise, Vector2Int currPoint, HashSet<Vector2Int> frontierSet, Dictionary<Vector2Int, bool> visited)
+    List<Vector2Int> getGridMaskPoints(int maskSize, int minSegmentSize, float[,] noise, Vector2Int currPoint, HashSet<Vector2Int> frontierSet, Dictionary<Vector2Int, bool> visited)
     {
         List<Vector2Int> neighbors = new List<Vector2Int>();
 
@@ -138,16 +140,19 @@ public class AStar
                 {
                     if (worldPointX >= 0 && worldPointY >= 0 && worldPointX < noise.GetLength(0) && worldPointY < noise.GetLength(1))
                     {
-                        if ((i != 0 && j != 0 && i % j != 0 && j % i != 0) || (i * i == 1 || j * j == 1))
+                        if (i * i >= minSegmentSize * minSegmentSize || j * j >= minSegmentSize * minSegmentSize)
                         {
-                            float deltaHeight = noise[worldPointY, worldPointX] - noise[currPoint.y, currPoint.x];
-                            float deltaX = worldPointX - currPoint.x;
-
-                            float slope = deltaHeight / (deltaX / noise.GetLength(0));
-
-                            if (-_maxSlope < slope && slope < _maxSlope)
+                            if ((i != 0 && j != 0 && i % j != 0 && j % i != 0) || (i * i == 1 || j * j == 1) || (i * i == minSegmentSize * minSegmentSize || j * j == minSegmentSize * minSegmentSize))
                             {
-                                neighbors.Add(new Vector2Int(worldPointX, worldPointY));
+                                Vector2Int worldPoint = new Vector2Int(worldPointX, worldPointY);
+                                float deltaHeight = noise[worldPointY, worldPointX] - noise[currPoint.y, currPoint.x];
+                                float deltaX = (worldPoint - currPoint).magnitude;
+                                float slope = deltaHeight / (deltaX / noise.GetLength(0));
+
+                                if (-_maxSlope < slope && slope < _maxSlope)
+                                {
+                                    neighbors.Add(worldPoint);
+                                }
                             }
                         }
                     }
