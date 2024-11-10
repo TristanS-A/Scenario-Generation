@@ -267,7 +267,7 @@ public class MeshModifier : MonoBehaviour
             else if (drop.sediment >= maxsediment) //If sediment is above/equal to capacity, it drops sediment
             {
                 drop.sediment -= drop.sediment * sdiff; //Drops sediment
-                _currNoise[dropPos.x, dropPos.y] += (drop.sediment * sdiff); //Adds to height maap
+                _currNoise[dropPos.x, dropPos.y] += (drop.sediment * sdiff); //Adds to height map
             }
 
             // Evaporate the drop
@@ -340,10 +340,10 @@ public class MeshModifier : MonoBehaviour
         ////Random of the lowest 2 directions : Returns random of the 2 lowest directions
         Vector2Int newDirection = UnityEngine.Random.Range(0, 2) == 1 ? minDirection1 : minDirection2;
 
-
         ////Random of the lowest 2 directions with closest direction being more likely
-        //float changeDir = Vector2.Dot(((Vector2)minDirection1 + (Vector2)minDirection2).normalized, currDirection);
-        //Vector2Int newDirection = UnityEngine.Random.Range(-1f, 1f) < changeDir ? minDirection1 : minDirection2;
+        //float totalTheta = (Vector2.Dot((Vector2)minDirection1, (Vector2)minDirection2) - 1) * -1;
+        //float currDirTheta = (Vector2.Dot((Vector2)minDirection1, (Vector2)currDirection) - 1) * -1;
+        //Vector2Int newDirection = UnityEngine.Random.Range(0, totalTheta + 0.1f) > currDirTheta ? minDirection1 : minDirection2;
 
         return newDirection;
     }
